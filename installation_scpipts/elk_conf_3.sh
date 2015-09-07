@@ -4,10 +4,11 @@
 
 ES_HOME=$HOME/elasticsearch-1.7.1
 ES_CONFIG=$ES_HOME/config/elasticsearch.yml #/etc/elasticsearch/elasticsearch.yml
-KBN_HOME=$HOME/kibana-4.1.1-linux-x64
+KBN_HOME=$HOME/kibana-4.1.1-linux-x64 #/opt/kibana
 KBN_CONFIG=$KIBANA_HOME/config/kibana.yml
-IP_ETH0=`ifconfig eth0 | grep 'inet addr'| awk '{print $2;}'|awk '{split($0,a,":");print a[2]}'`
-
+IP_ETH1=`ifconfig eth1 | grep 'inet addr'| awk '{print $2;}'|awk '{split($0,a,":");print a[2]}'`
+PORT=5003
+LOG_CONFIG=/etc/logstash/conf.d
  #to restrict outside access to your Elasticsearch instance (port 9200), so outsiders can't read your data or shutdown your Elasticsearch cluster through the HTTP API
  #also we give a name to our cluster and our node which is used to discover and auto-join other nodes
 ex $ES_CONFIG <<EOEX1
@@ -38,7 +39,7 @@ EOEX3
  #Because we configured Kibana to listen on localhost, we must set up a reverse proxy to allow external access to it. We will use Nginx for this purpose
 sudo apt-get install nginx apache2-utils
 sudo htpasswd -bc kibanaadmin kibana > auth/htpasswd
-touch /etc/nginx/conf.d/kibana.conf 
+sudo touch /etc/nginx/conf.d/kibana.conf 
 sudo cat <<EOF > /etc/nginx/conf.d/kibana.conf
  server {
   listen 80;
@@ -59,16 +60,76 @@ EOF
 sudo service nginx restart
 comment2
 
-<<comment3
- #copy the Kibana files to a more appropriate location
-sudo mkdir -p /opt/kibana
-sudo cp -R ~/kibana-4*/* /opt/kibana/
- #we need to have Kibana 4 start up when the machine boots so we need to have it run as a service
-sudo wget --output-document="/etc/init.d/kibana4" https://raw.githubusercontent.com/akabdog/scripts/master/kibana4_init
-sudo chmod +x /etc/init.d/kibana4
+ #add your Logstash Server's private IP address to the subjectAltName (SAN) field of the SSL certificate that we are about to generate
+ex /etc/ssl/openssl.cnf <<EOEX
+ :%s/ v3_ca ]/ v3_ca ]\rsubjectAltName = IP: $IP_ETH1/g
+ :x
+EOEX
 
-#sudo service kibana4 start
-comment3
+mkdir $HOME/certs
+cd $HOME
+sudo openssl req -config /etc/ssl/openssl.cnf -x509 -days 3650 -batch -nodes -newkey rsa:2048 -keyout certs/logfwd.key -out certs/logfwd.crt
+
+ #set up our "lumberjack" input (the protocol that Logstash Forwarder uses)
+sudo touch /etc/logstash/conf.d/01-lumberjack-input.conf
+sudo cat <<EOF > /etc/logstash/conf.d/01-lumberjack-input.conf
+input {
+  lumberjack {
+        port => $PORT
+        type => "logs"
+        ssl_certificate => "$HOME/certs/logfwd.crt"
+        ssl_key => "$HOME/certs/logfwd.key"
+  }
+}
+EOF
+
+ #syslog filter configuration. It will try to use "grok" to parse incoming syslog logs to make it structured and query-able
+sudo touch /etc/logstash/conf.d/10-syslog.conf
+sudo cat <<EOF > /etc/logstash/conf.d/10-syslog.conf
+filter {
+  if [type] == "syslog" {
+    grok {
+      match => { "message" => "%{SYSLOGTIMESTAMP:syslog_timestamp} %{SYSLOGHOST:syslog_hostname} %{DATA:syslog_program}(?:\[%{POSINT:syslog_pid}\])?: %{GREEDYDATA:syslog_message}" }
+      add_field => [ "received_at", "%{@timestamp}" ]
+      add_field => [ "received_from", "%{host}" ]
+    }
+    syslog_pri { }
+    date {
+      match => [ "syslog_timestamp", "MMM  d HH:mm:ss", "MMM dd HH:mm:ss" ]
+    }
+  }
+}
+EOF
+ 
+ #configures Logstash to store the logs in Elasticsearch. With this configuration, Logstash will also accept logs that do not match the filter, but the data will not be structured (e.g. unfiltered Nginx or Apache logs would appear as flat messages instead of categorizing messages by HTTP response codes, source IP addresses, served files, etc.)
+sudo touch /etc/logstash/conf.d/30-lumberjack-output.conf
+sudo cat <<EOF > /etc/logstash/conf.d/30-lumberjack-output.conf
+output {
+  elasticsearch { host => localhost protocol => "http" port => "9200" }
+  stdout { codec => rubydebug }
+}
+EOF
+ #this configures Logstash Forwarder to connect to your Logstash Server on port 5000 (the port that we specified an input for earlier), and uses the SSL certificate that we created earlier. The paths section specifies which log files to send (here we specify syslog and auth.log), and the type section specifies that these logs are of type "syslog* (which is the type that our filter is looking for).
+sudo touch /etc/logstash-forwarder.conf
+sudo cat <<EOF > /etc/logstash-forwarder.conf
+{
+  "network": {
+    "servers": [ "$IP_ETH1:$PORT" ],
+    "ssl ca": "/home/nectar/certs/logfwd.crt",
+    "timeout": 15
+  },
+
+  "files": [
+  {
+      "paths": [
+        "/var/log/syslog",
+        "/var/log/auth.log"
+      ],
+      "fields": { "type": "syslog" }
+  }
+  ]
+}
+EOF
 
 <<comment4
  #try to lock the process address space into RAM, preventing any Elasticsearch memory from being swapped out
