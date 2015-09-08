@@ -3,9 +3,9 @@
 ##source2: https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-configuration.html
 
 ES_HOME=$HOME/elasticsearch-1.7.1
-ES_CONFIG=$ES_HOME/config/elasticsearch.yml #/etc/elasticsearch/elasticsearch.yml
-KBN_HOME=$HOME/kibana-4.1.1-linux-x64 #/opt/kibana
-KBN_CONFIG=$KIBANA_HOME/config/kibana.yml
+ES_CONFIG=/etc/elasticsearch/elasticsearch.yml #$ES_HOME/config/elasticsearch.yml
+KBN_HOME=/opt/kibana
+KBN_CONFIG=$KBN_HOME/config/kibana.yml
 IP_ETH1=`ifconfig eth1 | grep 'inet addr'| awk '{print $2;}'|awk '{split($0,a,":");print a[2]}'`
 PORT=5003
 LOG_CONFIG=/etc/logstash/conf.d
@@ -17,7 +17,7 @@ ex $ES_CONFIG <<EOEX1
  :%s/#cluster.name:\zs.*//
  :%s/#cluster.name:/cluster.name: elk-cluster/g
  :%s/#node.name:\zs.*//
- :%s/#node.name:/node.name: \${prompt.text}
+ :%s/#node.name:/node.name: "elk-node2"/g
  :x
 EOEX1
 
@@ -72,7 +72,7 @@ sudo openssl req -config /etc/ssl/openssl.cnf -x509 -days 3650 -batch -nodes -ne
 
  #set up our "lumberjack" input (the protocol that Logstash Forwarder uses)
 sudo touch /etc/logstash/conf.d/01-lumberjack-input.conf
-sudo cat <<EOF > /etc/logstash/conf.d/01-lumberjack-input.conf
+sudo cat <<EOF > $LOG_CONFIG/01-lumberjack-input.conf
 input {
   lumberjack {
         port => $PORT
@@ -84,7 +84,7 @@ input {
 EOF
 
  #syslog filter configuration. It will try to use "grok" to parse incoming syslog logs to make it structured and query-able
-sudo touch /etc/logstash/conf.d/10-syslog.conf
+sudo touch $LOG_CONFIG/10-syslog.conf
 sudo cat <<EOF > /etc/logstash/conf.d/10-syslog.conf
 filter {
   if [type] == "syslog" {
@@ -102,8 +102,8 @@ filter {
 EOF
  
  #configures Logstash to store the logs in Elasticsearch. With this configuration, Logstash will also accept logs that do not match the filter, but the data will not be structured (e.g. unfiltered Nginx or Apache logs would appear as flat messages instead of categorizing messages by HTTP response codes, source IP addresses, served files, etc.)
-sudo touch /etc/logstash/conf.d/30-lumberjack-output.conf
-sudo cat <<EOF > /etc/logstash/conf.d/30-lumberjack-output.conf
+sudo touch $LOG_CONFIG/30-lumberjack-output.conf
+sudo cat <<EOF > $LOG_CONFIG/30-lumberjack-output.conf
 output {
   elasticsearch { host => localhost protocol => "http" port => "9200" }
   stdout { codec => rubydebug }
@@ -115,7 +115,7 @@ sudo cat <<EOF > /etc/logstash-forwarder.conf
 {
   "network": {
     "servers": [ "$IP_ETH1:$PORT" ],
-    "ssl ca": "/home/nectar/certs/logfwd.crt",
+    "ssl ca": "$HOME/certs/logfwd.crt",
     "timeout": 15
   },
 
@@ -143,5 +143,3 @@ sudo su
 ulimit -l unlimited
 ./bin/elasticsearch -d
 comment4
-
-
