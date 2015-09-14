@@ -1,0 +1,19 @@
+tcpreplay:
+  build: tcpreplay/
+  container_name: tcpreplay
+  volumes: 
+    - ./tcpreplay/pcapfiles:/root
+  net: "none"
+  #command: sleep 60 && tcpreplay --intf1=veth_tcpr /root/smia.pcap
+ovs:
+  image: socketplane/openvswitch
+  container_name: ovs
+  cap_add:
+    - NET_ADMIN
+    - SYS_MODULE
+  volumes:
+    - /lib/modules:/lib/modules
+  external_links: 
+    - logstash
+  command: modprobe openvswitch  && supervisorctl restart ovs-vswitchd && ovs-vsctl add-br br0 && ovs-vsctl add-port br0     e    th0 && ovs-vsctl -- --id=@sflow create sflow agent=eth0 target=\"logstash:6343\" header=128 sampling=64 polling=10 -    - set     bridge br0 sflow=@sflow
+
