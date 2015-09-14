@@ -9,6 +9,9 @@ KBN_CONFIG=$KBN_HOME/config/kibana.yml
 IP_ETH1=`ifconfig eth1 | grep 'inet addr'| awk '{print $2;}'|awk '{split($0,a,":");print a[2]}'`
 PORT=5003
 LOG_CONFIG=/etc/logstash/conf.d
+
+ 
+######################### Elasticsearch #########################
  #to restrict outside access to your Elasticsearch instance (port 9200), so outsiders can't read your data or shutdown your Elasticsearch cluster through the HTTP API
  #also we give a name to our cluster and our node which is used to discover and auto-join other nodes
 ex $ES_CONFIG <<EOEX1
@@ -27,7 +30,9 @@ sudo update-rc.d elasticsearch defaults 95 10
  #else diable it or remove it
 #sudo update-rc.d elasticsearch disable #or "remove"
 comment1
+##################################################
 
+######################### Kibana #########################
 <<comment2
  #this setting makes it so Kibana will only be accessible to the localhost. This is fine because we will use an Nginx reverse proxy to allow external access.
 ex KBN_CONFIG<<EOEX3
@@ -59,7 +64,9 @@ sudo cat <<EOF > /etc/nginx/conf.d/kibana.conf
 EOF
 sudo service nginx restart
 comment2
+##################################################
 
+######################### Logstash #########################
  #add your Logstash Server's private IP address to the subjectAltName (SAN) field of the SSL certificate that we are about to generate
 ex /etc/ssl/openssl.cnf <<EOEX
  :%s/ v3_ca ]/ v3_ca ]\rsubjectAltName = IP: $IP_ETH1/g
@@ -71,7 +78,7 @@ cd $HOME
 sudo openssl req -config /etc/ssl/openssl.cnf -x509 -days 3650 -batch -nodes -newkey rsa:2048 -keyout certs/logfwd.key -out certs/logfwd.crt
 
  #set up our "lumberjack" input (the protocol that Logstash Forwarder uses)
-sudo touch /etc/logstash/conf.d/01-lumberjack-input.conf
+sudo touch $LOG_CONFIG/01-lumberjack-input.conf
 sudo cat <<EOF > $LOG_CONFIG/01-lumberjack-input.conf
 input {
   lumberjack {
@@ -109,6 +116,9 @@ output {
   stdout { codec => rubydebug }
 }
 EOF
+##################################################
+
+######################### Logstash-Forwarder #########################
  #this configures Logstash Forwarder to connect to your Logstash Server on port 5000 (the port that we specified an input for earlier), and uses the SSL certificate that we created earlier. The paths section specifies which log files to send (here we specify syslog and auth.log), and the type section specifies that these logs are of type "syslog* (which is the type that our filter is looking for).
 sudo touch /etc/logstash-forwarder.conf
 sudo cat <<EOF > /etc/logstash-forwarder.conf
@@ -130,7 +140,9 @@ sudo cat <<EOF > /etc/logstash-forwarder.conf
   ]
 }
 EOF
+##################################################
 
+######################### Elasticsearch #########################
 <<comment4
  #try to lock the process address space into RAM, preventing any Elasticsearch memory from being swapped out
 ex $ES_CONFIG <<EOEX
@@ -143,3 +155,4 @@ sudo su
 ulimit -l unlimited
 ./bin/elasticsearch -d
 comment4
+##################################################
