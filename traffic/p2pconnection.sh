@@ -1,3 +1,4 @@
+#!/bin/bash
 # Learn the container process IDs
 # and create their namespace entries
 sudo mkdir -p /var/run/netns

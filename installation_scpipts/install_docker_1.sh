@@ -1,3 +1,4 @@
+#!/bin/bash
 #ubuntu trusty 14.04
 ##source1: https://docs.docker.com/installation/ubuntulinux/
 

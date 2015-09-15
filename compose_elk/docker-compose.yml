@@ -1,0 +1,29 @@
+elasticsearch:
+  container_name: elasticsearch
+  build: elasticsearch/
+  volumes:
+      - ./elasticsearch/config:/usr/share/elasticsearch/config
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+  ports:
+    - "9200:9200"
+logstash:
+  container_name: logstash
+  build: logstash/
+  command: logstash -f /etc/logstash/conf.d/
+  volumes:
+    - ./logstash/config:/etc/logstash/conf.d
+    - ./logstash/scripts:/var/scripts
+    - ./logstash/dictionaries:/etc/logstash/dictionaries
+  ports:
+    - "5000:5000"
+  links:
+    - elasticsearch
+kibana:
+  container_name: kibana
+  image: kibana:latest
+  volumes:
+    - ./kibana/config:/opt/kibana/config
+  ports:
+    - "5601:5601"
+  links:
+    - elasticsearch

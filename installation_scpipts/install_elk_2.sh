@@ -1,3 +1,4 @@
+#!/bin/bash
 #ubuntu trusty 14.04
 ##source1: https://www.digitalocean.com/community/tutorials/how-to-install-elasticsearch-logstash-and-kibana-4-on-ubuntu-14-04,
 #source2: https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-repositories.html
