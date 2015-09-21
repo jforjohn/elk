@@ -9,7 +9,7 @@ elasticsearch:
 logstash:
   container_name: logstash
   build: logstash/
-  command: logstash -f /etc/logstash/conf.d/
+  command: logstash -f /etc/logstash/conf.d
   volumes:
     - ./logstash/config:/etc/logstash/conf.d
     - ./logstash/scripts:/var/scripts
