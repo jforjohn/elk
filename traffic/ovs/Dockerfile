@@ -1,4 +1,5 @@
-FROM socketplane/openvswitch
+#FROM socketplane/openvswitch
+FROM mgkwill/openvswitch
 
 RUN apt-get update \
     && apt-get install tcpdump

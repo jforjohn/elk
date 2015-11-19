@@ -10,3 +10,6 @@ sudo apt-get install python-virtualenv
 virtualenv flask 
 flask/bin/pip install flask 
 
+##clocker + calico
+#sudo modprobe xt_set 
+#sudo modprobe ipip

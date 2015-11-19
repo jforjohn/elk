@@ -14,9 +14,11 @@ RUN apt-get update \
     #&& unzip master.zip \
     # && rm master.zip \
     # && cd logstash-codec-netflow-master \
-    && bundle install \
+    # && bundle install \
     && plugin install logstash-filter-translate \
                       logstash-filter-geoip \
                       logstash-filter-dns \
+                      logstash-filter-elasticsearch \
                       logstash-codec-rubydebug \
-                      logstash-codec-netflow 
+                      logstash-codec-netflow \
+                      logstash-output-elasticsearch

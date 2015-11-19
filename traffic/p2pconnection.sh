@@ -2,8 +2,8 @@
 # Learn the container process IDs
 # and create their namespace entries
 sudo mkdir -p /var/run/netns
-OVS_PID=`docker inspect -f '{{.State.Pid}}' ovs`
-TCPR_PID=`docker inspect -f '{{.State.Pid}}' tcpreplay`
+OVS_PID=`docker inspect -f '{{.State.Pid}}' $1`
+TCPR_PID=`docker inspect -f '{{.State.Pid}}' $2`
 
 sudo ln -s /proc/$OVS_PID/ns/net /var/run/netns/$OVS_PID
 sudo ln -s /proc/$TCPR_PID/ns/net /var/run/netns/$TCPR_PID

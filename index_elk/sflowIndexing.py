@@ -53,7 +53,6 @@ for line in sflowToolProc.stdout:
         print message
 
         
-        es.index(index="sflow-20151104", doc_type="sflow", id=count, body={"srcMAC": srcMAC, "dstMAC": dstMAC, "etherType": etherType, "srcVlan": srcVlan, "dstVlan": dstVlan, "srcIP": srcIP, "dstIP": dstIP, "protocol": protocol, "srcPort": srcPort, "dstPort": dstPort, "tcpFlag": tcpFlag, "packetSize": packetSize, "sampleRate": sampleRate, "packetCount": count, "timestamp": datetime.now()})
+        es.index(index=str(sys.argv[1]), doc_type="sflow", id=count, body={"srcMAC": srcMAC, "dstMAC": dstMAC, "etherType": etherType, "srcVlan": srcVlan, "dstVlan": dstVlan, "srcIP": srcIP, "dstIP": dstIP, "protocol": protocol, "srcPort": srcPort, "dstPort": dstPort, "tcpFlag": tcpFlag, "packetSize": packetSize, "sampleRate": sampleRate, "packetCount": count, "timestamp": datetime.now()})
 
 #s.close()
-print "ela"
