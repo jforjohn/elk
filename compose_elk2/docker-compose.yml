@@ -1,0 +1,33 @@
+elasticsearch:
+  container_name: elasticsearch2
+  build: elasticsearch/
+  volumes:
+      - ./elasticsearch/config:/usr/share/elasticsearch/config
+      - ./elasticsearch/data:/usr/share/elasticsearch/data
+  expose:
+    - "9500"
+  ports:
+    - "9500:9500"
+logstash:
+  container_name: logstash2
+  build: logstash/
+  command: logstash -f /etc/logstash/conf.d
+  volumes:
+    - ./logstash/config:/etc/logstash/conf.d
+    - ./logstash/scripts:/var/scripts
+    - ./logstash/dictionaries:/etc/logstash/dictionaries
+  ports:
+    - "5001:5001"
+  links:
+    - elasticsearch
+kibana:
+  container_name: kibana2
+  build: kibana/
+  volumes:
+    - ./kibana/config:/opt/kibana/config
+  ports:
+    - "5602:5602"
+  links:
+    - elasticsearch 
+  environment:
+    - ELASTICSEARCH_URL=http://elasticsearch:9500
