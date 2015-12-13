@@ -1,5 +1,3 @@
-# elk
-
 ## Real time network traffic monitoring and PaaS provisioning
 
 The project here is part of my thesis. The topic is to monitor sampled network traffic (sflow) and then provide it as Platform as a Service to end users. 
