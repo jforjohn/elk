@@ -44,6 +44,7 @@ for line in infile:
     dstIPpub = randPub()
     ipPub = randPub()
     #json.dump({ipPriv: ipPub}, outfile,indent=2)
+
     if first: 
         #outfile.write('%s: %s' %(srcIP, srcIPpriv))
         outfile.write('%s: %s' %(srcIP, srcIPpub))
