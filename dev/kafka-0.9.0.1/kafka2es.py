@@ -1,21 +1,186 @@
 #!/usr/bin/python
 from kafka import KafkaConsumer
+from kafka.coordinator.assignors.roundrobin import RoundRobinPartitionAssignor
+from elasticsearch import Elasticsearch, helpers
+from translateIP import mapIP
+import logging
 import signal
 import sys
-import logging
+import json
+import time, datetime
+
+class MessageHandler:
+  def __init__(self):
+    self.data = dict()
+
+  def Accept(self, body, message, es):
+    try:
+      #self.payload.append(self.EmbedData(body))
+      self.data = self.EmbedData(body)
+    except Exception, e:
+      loggerConsumer.error('Discarding message - failed to append to payload: %s' % e)
+
+    #if len(self.payload) >= 10:
+    topic = message.topic
+    self.PushMessage(topic, es)
+
+  def EmbedData(self, body):
+    sflowSample = dict()
+    
+    #sflowSample['@timestamp']
+    timestamp = 'T'.join(
+                str(datetime.datetime.now())
+               .split())[0:23] + 'Z'
+
+    fields = body.split(',')
+    if fields[0] == "FLOW":
+      #reporterIP = fields[1]
+      #inPort = fields[2]
+      #outPort = fields[3]
+      srcMAC = fields[4]
+      dstMAC = fields[5]
+      etherType = fields[6]
+      srcVlan = fields[7]
+      dstVlan = fields[8]
+      srcIP = fields[9]
+      dstIP = fields[10]
+      protocol = fields[11]
+      #ipTOS = fields[12]
+      #ipTTL = fields[13]
+      srcPort = fields[14]
+      dstPort = fields[15]
+      tcpFlag = fields[16]
+      packetSize = fields[17]
+      #ipSize = fields[18]
+      sampleRate = fields[19]
+      dateTime = int(time.time()*1000000)
+
+      
+      [srcIPnew, dstIPnew] = map(mapIP, [srcIP,dstIP])
+      #srcIPnew = mapIP(srcIP)
+      #dstIPnew = mapIP(dstIP)
+
+      sflowSample = {
+      #'reporterIP':reporterIP,
+      #'inPort':inPort,
+      #'outPort':outPort
+      '@timestamp':timestamp,
+      'srcMAC':srcMAC,
+      'dstMAC':dstMAC,
+      'etherType':etherType,
+      'srcVlan':srcVlan,
+      'dstVlan':dstVlan,
+      'srcIP':srcIP,
+      'dstIP':dstIP,
+      'protocol':protocol,
+      #'ipTOS':ipTOS,
+      #'ipTTL':ipTTL,
+      'srcPort':srcPort,
+      'dstPort':dstPort,
+      'tcpFlag':tcpFlag,
+      'packetSize':packetSize,
+      #'ipSize':ipSize,
+      'sampleRate':sampleRate,
+      'srcIPnew':srcIPnew,
+      'dstIPnew':dstIPnew
+      }
+    else:
+      sflowSample = body
+
+    return sflowSample
+
+  def Encapsulate(self):
+    datestr  = time.strftime('%Y-%m-%d')
+    indexstr = '%s-%s' % ('sflow1', datestr)
+    
+    send_data = [{
+      '_index' : indexstr,
+      '_type': 'sflow',
+      '_source': self.data
+      
+    }]
+    
+    loggerIndex.info('Compiling Elasticsearch payload with  records') #% len(self.payload))
+    #header = json.dumps(header)
+    #body   = ''
+    #data   = ''
+
+    #for record in self.payload:
+    #  data += '%s\n%s\n' % (header, json.dumps(record))
+
+    return send_data
+
+  def PushMessage(self, topic, es):
+    send_data = self.Encapsulate()
+    try:
+      #r = requests.post('%s/_bulk?' % args.elasticserver, data=data, timeout=args.timeout)
+      #helpers.parallel_bulk(es, data, chunk_size=5)
+      for success, info in helpers.parallel_bulk(es, send_data, chunk_size=200):
+        print '\n', info, success
+        if not success:
+          print('A document failed:', info)
+      self.data = {}
+      loggerIndex.info('Bulk API request to Elasticsearch returned with code ' )
+    except Exception, e:
+      loggerIndex.error('Failed to send to Elasticsearch: %s' % e)
 
 
-def closeConsumer(signum, frame):
-  logger.info('\nSignal handler called with signal: %s' %(signum))
-  consumer.close()
-  sys.exit(1)
+class StreamConsumer():
+  def __init__(self, connection, es, callback):
+    self.callback   = callback
+    self.connection = connection
+    self.es = es
+
+  #def close(self, *args, **kwargs):
+    #self.connection.close()
+    #exit(0)
+  def closeConsumer(signum, frame, self):
+    loggerConsumer.info('Signal handler called with signal: %s' %(signum))
+    self.connection.close()
+    sys.exit(0)
+
+  def runConsumer(self):
+    try:
+      for message in self.connection:
+        body = message.value #json.loads(message.value)
+        self.callback(body, message, self.es)
+    except Exception, e:
+      loggerConsumer.error("During messages parsing exception: %s" %e)
+
+
+def SetupConsumer():
+  # To consume latest messages and auto-commit offsets
+  loggerConsumer.info('Consumer%i starts' %(1)) 
+  try:
+    myConsumer = KafkaConsumer('connect-test',
+                            group_id='sflow-myConsumerz',
+                            bootstrap_servers=['192.168.0.2:9092','192.168.0.3:9092','192.168.0.4:9092'],
+                            #max_partition_fetch_bytes=20000000,
+                            partition_assignment_strategy=[RoundRobinPartitionAssignor])
+  except Exception, e:
+    loggerConsumer.error("During consumer instantiation: %s" %e)
+  return myConsumer
+
+def SetupES():
+  loggerIndex.info('Connecting to Elasticsearch cluster')
+  try:
+    es = Elasticsearch(["192.168.0.1", "192.168.0.4", "192.168.0.5"],
+          sniff_on_start=True,
+          sniff_on_connection_fail=True,
+          sniffer_timeout=120)
+  except Exception, e:
+    loggerConsumer.error("During Elasticsearch cluster instantiation: %s" %e)
+  return es
 
 if __name__ == '__main__':
-
-  #logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
+  global loggerConsumer
+  global loggerIndex
   # create logger
-  logger = logging.getLogger('kafka 2 es')
-  logger.setLevel(logging.DEBUG)
+  loggerConsumer = logging.getLogger('kafka consumer')
+  loggerConsumer.setLevel(logging.DEBUG)
+
+  loggerIndex = logging.getLogger('es indexing')
+  loggerConsumer.setLevel(logging.DEBUG)
 
   # create console handler and set level to debug
   logDest = logging.StreamHandler()
@@ -27,257 +192,15 @@ if __name__ == '__main__':
   logDest.setFormatter(formatter)
 
   # add ch to logger
-  logger.addHandler(logDest)
-
-  # To consume latest messages and auto-commit offsets
-  logger.info('Consumer%i starts' %(1))
-  consumer = KafkaConsumer('my-topic',
-                           group_id='sflow-logstash',
-                           bootstrap_servers=['192.168.0.2:9092','192.168.0.3:9092','192.168.0.4:9092'])
-
-
-  signal.signal(signal.SIGINT, closeConsumer)
-  for message in consumer:
-      # message value and key are raw bytes -- decode if necessary!
-      # e.g., for unicode: `message.value.decode('utf-8')`
-      logger.info("%s:%d:%d: key=%s value=%s" % (message.topic, message.partition,
-                                            message.offset, message.key,
-                                            message.value))
-      
-
-
-'''
-# consume earliest available messages, dont commit offsets
-KafkaConsumer(auto_offset_reset='earliest', enable_auto_commit=False)
-
-# consume json messages
-KafkaConsumer(value_deserializer=lambda m: json.loads(m.decode('ascii')))
-
-# consume msgpack
-KafkaConsumer(value_deserializer=msgpack.unpackb)
-
-# StopIteration if no message after 1sec
-KafkaConsumer(consumer_timeout_ms=1000)
-
-# Subscribe to a regex topic pattern
-consumer = KafkaConsumer()
-consumer.subscribe(pattern='^awesome.*')
-
-# Use multiple consumers in parallel w/ 0.9 kafka brokers
-# typically you would run each on a different server / process / CPU
-consumer1 = KafkaConsumer('my-topic',
-                          group_id='my-group',
-                          bootstrap_servers='my.server.com')
-consumer2 = KafkaConsumer('my-topic',
-                          group_id='my-group',
-                          bootstrap_servers='my.server.com')
-
-from contextlib import closing
-from kafka import KafkaConsumer
-import argparse
-import json
-import requests
-import time
-import re
-import socket
-import signal
-import sys
-import threading
-
-
-def Parser():
-  parser = argparse.ArgumentParser()
-
-  parser.add_argument(
-    '-v', '--verbose', action='store_true')
-  parser.add_argument(
-    '-r', '--lookup', help='Perform reverse DNS lookups on IP addresses.', action='store_true')
-  parser.add_argument(
-    '-tx', '--wbuf', help='Length of ES write buffer.', type=int, default=100)
-  parser.add_argument(
-    '-i', '--indexname', help='Elasticsearch index name to use.', type=str)
-  parser.add_argument(
-    '-id', '--indexdate', help='Append date to provided index.', action='store_true')
-  parser.add_argument(
-    '-k', '--timekey', help='Name of pmacct dictionary key to use for index.', default='timestamp_start', type=str)
-  parser.add_argument(
-    '-c', '--cstring', help='Kafka metadata broker endpoint.', default='127.0.0.1:9092')
-  parser.add_argument(
-    '-q', '--topic', help='Kafka consumer topic.', required=True, type=str)
-  parser.add_argument(
-    '--skip-old-messages', help='Consume messages starting from the current offset, effectively discarding earlier messages.', default=False, type=bool)
-  parser.add_argument(
-    '-t', '--timeout', help='Elasticsearch read timeout.', type=int, default=1)
-  parser.add_argument(
-    '-s', '--elasticserver', help='Hostname and port of (e.g. localhost:9200) for ElasticSearch instance.', default='http://localhost:9200')
-
-  return parser.parse_args()
-
-
-def Log(msg):
-  if args.verbose:
-    print '[%i] %s' % (int(time.time()), msg)
-
-
-def GetTopic(queue_params):
-  exchange = Exchange(args.exchangename, args.exchangetype, durable=args.exchangedurable)
-  queue    = Queue(args.queue, exchange=exchange, routing_key=args.queue, durable=args.queuedurable, queue_arguments=queue_params) 
-
-  return queue
-
-
-class MessageHandler:
-  def __init__(self):
-    self.payload = []
-
-
-  def Accept(self, body, message):
-    try:
-      self.payload.append(self.EmbedData(body, message))
-    except Exception, e:
-      Log('Discarding message - failed to append to payload: %s' % e)
-
-    if len(self.payload) >= args.wbuf:
-      route = message.topic
-      self.PushMessage(route)
-
-
-  def CreateESIndex(self, route):
-    datestr  = time.strftime('%Y-%m-%d')
-
-    if args.indexname:
-      index    = args.indexname
-      indexstr = '%s-%s' % (index, datestr)
-    else:
-      index    = '%s-%s' % ('pmacct', route)
-      indexstr = '%s-%s' % (index, datestr)
-
-    return indexstr
-
-
-  def GetPacketTimestamp(self, body):
-    try:
-      datestr = 'T'.join(body[args.timekey].split())
-
-    except KeyError:
-      Log('Message does not contain %s field: %s' % (args.timekey, body))
-      raise
-
-    return datestr
-
-
-  def TimestampESFormat(self, timestamp):
-    tz = re.search('([-+]\d+$)', timestamp)
-
-    # Shave off extra data sent by pmacct and work out an appropriate tz.
-    if tz:
-      # TZ came with payload.
-      timestamp = timestamp[0:23] + tz.groups()[0]
-    else:
-      # This timestamp may not include timezone; lets pretend it is this one.
-      timestamp = '%s%s' % (timestamp[0:23], time.strftime('%z'))
-
-    return timestamp
-
-
-  def EmbedData(self, body, message):
-    tags = []
-    if 'tags' in body: tags += body['tags']
-    # tags.append(message.delivery_info['routing_key'])
-    body['tags'] = tags
-    timestamp = self.GetPacketTimestamp(body)
-    body['@timestamp'] = self.TimestampESFormat(timestamp)
-
-    if args.lookup:
-      if 'ip_dst' in body:
-        try:
-          destination = socket.gethostbyaddr(body['ip_dst'])[0]
-          body['ip_dst_ptr'] = destination
-        except: pass
-      if 'ip_src' in body:
-        try:
-          source = socket.gethostbyaddr(body['ip_src'])[0]
-          body['ip_src_ptr'] = source
-        except: pass
-
-    return body
-
-
-  def Encapsulate(self, route):
-    index = self.CreateESIndex(route)
-
-    header = {
-      'index': {
-        '_type' : 'pmacct',
-        '_index': index,
-      }
-    }
-
-    Log('Compiling Elasticsearch payload with %i records' % len(self.payload))
-    header = json.dumps(header)
-    body   = ''
-    data   = ''
-
-    for record in self.payload:
-      data += '%s\n%s\n' % (header, json.dumps(record))
-
-    return data
+  loggerConsumer.addHandler(logDest)
+  loggerIndex.addHandler(logDest)
   
+  kafkaConnection = SetupConsumer()
+  esConnection = SetupES()
+  handler = MessageHandler()
 
-  def PushMessage(self, route):
-    data = self.Encapsulate(route)
+  consumer = StreamConsumer(kafkaConnection, esConnection, handler.Accept)
 
-    try:
-      r = requests.post('%s/_bulk?' % args.elasticserver, data=data, timeout=args.timeout)
-      self.payload = []
-      Log('Bulk API request to Elasticsearch returned with code %i' % r.status_code)
-    except Exception, e:
-      Log('Failed to send to Elasticsearch: %s' % e)
+  signal.signal(signal.SIGINT, consumer.closeConsumer)
 
-
-class MessageConsumer:
-  def __init__(self, connection, callback):
-    self.callback   = callback
-    self.connection = connection
-
-
-  def close(self, *args, **kwargs):
-    Log('Shutdown')
-    self.connection.close()
-    exit(0)
-
-
-  def run(self):
-    for message in self.connection:
-      body = json.loads(message.value)
-      self.callback(body, message)
-
-
-def SetupConsumer():
-  if args.skip_old_messages:
-    auto_offset_reset = 'largest'
-  else:
-    auto_offset_reset = 'smallest'
-
-  output = KafkaConsumer(
-    args.topic,
-    auto_offset_reset=auto_offset_reset,
-    group_id='pmacct_%s' % args.topic,
-    bootstrap_servers=args.cstring,
-  )
-
-  return output
-
-
-if __name__ == "__main__":
-  global args
-  args = Parser()
-
-  connection = SetupConsumer()
-  handler    = MessageHandler()
-  consumer   = MessageConsumer(connection, handler.Accept)
-
-  signal.signal(signal.SIGINT, connection.close)
-
-  closing(consumer.run())
-'''
+  consumer.runConsumer()
