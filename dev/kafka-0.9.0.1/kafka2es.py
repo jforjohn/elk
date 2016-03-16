@@ -25,7 +25,7 @@ class MessageHandler:
 
     self.Encapsulate()
     print len(self.send_data)
-    if len(self.send_data) >= 40:
+    if len(self.send_data) >= 1500:
       #topic = message.topic
       self.PushMessage(es)
 
@@ -179,7 +179,7 @@ def SetupConsumer():
     myConsumer = KafkaConsumer('connect-test',
                             group_id='sflow-myConsumerz',
                             bootstrap_servers=['192.168.0.2:9092','192.168.0.3:9092','192.168.0.4:9092'],
-                            #max_partition_fetch_bytes=20000000,
+                            max_partition_fetch_bytes=20000000,
                             partition_assignment_strategy=[RoundRobinPartitionAssignor])
   except Exception, e:
     loggerConsumer.error("During consumer instantiation: %s" %e)
