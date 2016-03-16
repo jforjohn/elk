@@ -5,6 +5,7 @@ from elasticsearch import Elasticsearch, helpers
 #from translateIP import mapIP
 import logging
 import signal
+import socket
 import sys
 import yaml
 from yaml import load
@@ -50,7 +51,15 @@ class MessageHandler:
       sflow_srcVlan = fields[7]
       sflow_dstVlan = fields[8]
       sflow_srcIP = fields[9]
+      try:
+        socket.inet_pton(socket.AF_INET, sflow_srcIP)
+      except:
+        sflow_srcIP = '0.0.0.0'
       sflow_dstIP = fields[10]
+      try:
+        socket.inet_pton(socket.AF_INET, sflow_dstIP)
+      except:
+        sflow_dstIP = '0.0.0.0'
       sflow_IP_Protocol = fields[11]
       sflow_IPTOS = fields[12]
       sflow_IPTTL = fields[13]
